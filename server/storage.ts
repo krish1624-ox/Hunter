@@ -5,6 +5,8 @@ import {
   moderationLogs, type ModerationLog, type InsertModerationLog,
   botSettings, type BotSettings, type InsertBotSettings
 } from "@shared/schema";
+import { db } from "./db";
+import { eq, desc, asc, sql, ilike } from "drizzle-orm";
 
 export interface IStorage {
   // User methods
@@ -354,4 +356,347 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+// Database Storage implementation
+export class DatabaseStorage implements IStorage {
+  // User methods
+  async getUser(id: number): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user;
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values(insertUser)
+      .returning();
+    return user;
+  }
+
+  // TelegramUser methods
+  async getTelegramUser(id: number): Promise<TelegramUser | undefined> {
+    const [user] = await db.select().from(telegramUsers).where(eq(telegramUsers.id, id));
+    return user;
+  }
+
+  async getTelegramUserByTelegramId(telegramId: string): Promise<TelegramUser | undefined> {
+    const [user] = await db.select().from(telegramUsers).where(eq(telegramUsers.telegramId, telegramId));
+    return user;
+  }
+
+  async createTelegramUser(insertUser: InsertTelegramUser): Promise<TelegramUser> {
+    const [user] = await db
+      .insert(telegramUsers)
+      .values({
+        ...insertUser,
+        warningCount: 0,
+        isMuted: false,
+        isBanned: false,
+        muteExpiresAt: null,
+      })
+      .returning();
+    return user;
+  }
+
+  async updateTelegramUser(id: number, updates: Partial<TelegramUser>): Promise<TelegramUser | undefined> {
+    const [user] = await db
+      .update(telegramUsers)
+      .set(updates)
+      .where(eq(telegramUsers.id, id))
+      .returning();
+    return user;
+  }
+
+  async incrementWarningCount(telegramId: string): Promise<TelegramUser | undefined> {
+    const [user] = await db
+      .select()
+      .from(telegramUsers)
+      .where(eq(telegramUsers.telegramId, telegramId));
+    
+    if (!user) return undefined;
+    
+    const [updatedUser] = await db
+      .update(telegramUsers)
+      .set({
+        warningCount: (user.warningCount || 0) + 1,
+      })
+      .where(eq(telegramUsers.id, user.id))
+      .returning();
+    
+    return updatedUser;
+  }
+
+  async muteUser(telegramId: string, durationMinutes: number): Promise<TelegramUser | undefined> {
+    const [user] = await db
+      .select()
+      .from(telegramUsers)
+      .where(eq(telegramUsers.telegramId, telegramId));
+    
+    if (!user) return undefined;
+    
+    const muteExpiresAt = new Date();
+    muteExpiresAt.setMinutes(muteExpiresAt.getMinutes() + durationMinutes);
+    
+    const [updatedUser] = await db
+      .update(telegramUsers)
+      .set({
+        isMuted: true,
+        muteExpiresAt,
+      })
+      .where(eq(telegramUsers.id, user.id))
+      .returning();
+    
+    return updatedUser;
+  }
+
+  async unmuteUser(telegramId: string): Promise<TelegramUser | undefined> {
+    const [user] = await db
+      .select()
+      .from(telegramUsers)
+      .where(eq(telegramUsers.telegramId, telegramId));
+    
+    if (!user) return undefined;
+    
+    const [updatedUser] = await db
+      .update(telegramUsers)
+      .set({
+        isMuted: false,
+        muteExpiresAt: null,
+      })
+      .where(eq(telegramUsers.id, user.id))
+      .returning();
+    
+    return updatedUser;
+  }
+
+  async banUser(telegramId: string): Promise<TelegramUser | undefined> {
+    const [user] = await db
+      .select()
+      .from(telegramUsers)
+      .where(eq(telegramUsers.telegramId, telegramId));
+    
+    if (!user) return undefined;
+    
+    const [updatedUser] = await db
+      .update(telegramUsers)
+      .set({
+        isBanned: true,
+        isMuted: false,
+        muteExpiresAt: null,
+      })
+      .where(eq(telegramUsers.id, user.id))
+      .returning();
+    
+    return updatedUser;
+  }
+
+  async unbanUser(telegramId: string): Promise<TelegramUser | undefined> {
+    const [user] = await db
+      .select()
+      .from(telegramUsers)
+      .where(eq(telegramUsers.telegramId, telegramId));
+    
+    if (!user) return undefined;
+    
+    const [updatedUser] = await db
+      .update(telegramUsers)
+      .set({
+        isBanned: false,
+      })
+      .where(eq(telegramUsers.id, user.id))
+      .returning();
+    
+    return updatedUser;
+  }
+
+  // FilteredWord methods
+  async getFilteredWords(): Promise<FilteredWord[]> {
+    return await db.select().from(filteredWords);
+  }
+
+  async getFilteredWord(id: number): Promise<FilteredWord | undefined> {
+    const [word] = await db.select().from(filteredWords).where(eq(filteredWords.id, id));
+    return word;
+  }
+
+  async createFilteredWord(insertWord: InsertFilteredWord): Promise<FilteredWord> {
+    const [word] = await db
+      .insert(filteredWords)
+      .values(insertWord)
+      .returning();
+    return word;
+  }
+
+  async updateFilteredWord(id: number, updates: Partial<FilteredWord>): Promise<FilteredWord | undefined> {
+    const [word] = await db
+      .update(filteredWords)
+      .set(updates)
+      .where(eq(filteredWords.id, id))
+      .returning();
+    return word;
+  }
+
+  async deleteFilteredWord(id: number): Promise<boolean> {
+    const result = await db
+      .delete(filteredWords)
+      .where(eq(filteredWords.id, id));
+    return result.rowCount > 0;
+  }
+
+  async containsFilteredWord(message: string): Promise<FilteredWord | undefined> {
+    const words = await db.select().from(filteredWords);
+    const lowercaseMsg = message.toLowerCase();
+    
+    return words.find(word => lowercaseMsg.includes(word.word.toLowerCase()));
+  }
+
+  // ModerationLog methods
+  async getModerationLogs(limit: number = 100, offset: number = 0): Promise<ModerationLog[]> {
+    return await db
+      .select()
+      .from(moderationLogs)
+      .orderBy(desc(moderationLogs.timestamp))
+      .limit(limit)
+      .offset(offset);
+  }
+
+  async getModerationLogsByUser(telegramUserId: number): Promise<ModerationLog[]> {
+    return await db
+      .select()
+      .from(moderationLogs)
+      .where(eq(moderationLogs.telegramUserId, telegramUserId))
+      .orderBy(desc(moderationLogs.timestamp));
+  }
+
+  async createModerationLog(insertLog: InsertModerationLog): Promise<ModerationLog> {
+    const [log] = await db
+      .insert(moderationLogs)
+      .values({
+        ...insertLog,
+        timestamp: new Date(),
+      })
+      .returning();
+    return log;
+  }
+
+  // BotSettings methods
+  async getBotSettings(chatId: string): Promise<BotSettings | undefined> {
+    const [settings] = await db
+      .select()
+      .from(botSettings)
+      .where(eq(botSettings.chatId, chatId));
+    return settings;
+  }
+
+  async getOrCreateBotSettings(chatId: string): Promise<BotSettings> {
+    const existing = await this.getBotSettings(chatId);
+    if (existing) return existing;
+    
+    const [settings] = await db
+      .insert(botSettings)
+      .values({
+        chatId,
+        defaultMuteDuration: 24 * 60, // 24 hours in minutes
+        warningThreshold: 3,
+        muteThreshold: 5,
+        banThreshold: 8,
+        deleteOnFilter: true,
+        warnOnFilter: true,
+        notifyAdmins: true,
+        customWelcomeMessage: null,
+      })
+      .returning();
+    
+    return settings;
+  }
+
+  async updateBotSettings(chatId: string, updates: Partial<BotSettings>): Promise<BotSettings | undefined> {
+    const [settings] = await db
+      .select()
+      .from(botSettings)
+      .where(eq(botSettings.chatId, chatId));
+    
+    if (!settings) return undefined;
+    
+    const [updatedSettings] = await db
+      .update(botSettings)
+      .set(updates)
+      .where(eq(botSettings.id, settings.id))
+      .returning();
+    
+    return updatedSettings;
+  }
+}
+
+// Initialize the database with default filtered words if empty
+async function initializeDefaultFilteredWords() {
+  const words = await db.select().from(filteredWords);
+  
+  if (words.length === 0) {
+    const defaultWords = [
+      {
+        word: "profanity1",
+        category: "profanity",
+        deleteMessage: true,
+        warnUser: true,
+        autoMute: false,
+        autoBan: false,
+        warningsBeforeMute: 3,
+        warningsBeforeBan: 5
+      },
+      {
+        word: "spam1",
+        category: "spam",
+        deleteMessage: true,
+        warnUser: true,
+        autoMute: true,
+        autoBan: false,
+        warningsBeforeMute: 3,
+        warningsBeforeBan: 5
+      },
+      {
+        word: "freecoin",
+        category: "spam",
+        deleteMessage: true,
+        warnUser: true,
+        autoMute: false,
+        autoBan: false,
+        warningsBeforeMute: 3,
+        warningsBeforeBan: 5
+      },
+      {
+        word: "clickhere",
+        category: "spam",
+        deleteMessage: true,
+        warnUser: true,
+        autoMute: true,
+        autoBan: false,
+        warningsBeforeMute: 2,
+        warningsBeforeBan: 5
+      },
+      {
+        word: "harassment1",
+        category: "harassment",
+        deleteMessage: true,
+        warnUser: true,
+        autoMute: true,
+        autoBan: true,
+        warningsBeforeMute: 2,
+        warningsBeforeBan: 4
+      }
+    ];
+    
+    await db.insert(filteredWords).values(defaultWords);
+  }
+}
+
+// Initialize the storage
+initializeDefaultFilteredWords()
+  .then(() => console.log("Default filtered words initialized"))
+  .catch(err => console.error("Error initializing default filtered words:", err));
+
+export const storage = new DatabaseStorage();
