@@ -7,13 +7,16 @@ import { insertFilteredWordSchema, insertBotSettingsSchema } from "@shared/schem
 import { setupAuth, requireAuth, requireAdmin } from "./auth";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Set up authentication routes first
+  await setupAuth(app);
+  
   // Start the Telegram bot
   startBot();
 
   // Prefix all API routes with /api
   
   // Get stats for dashboard
-  app.get("/api/stats", async (req, res) => {
+  app.get("/api/stats", requireAuth, async (req, res) => {
     try {
       const logs = await storage.getModerationLogs();
       
@@ -83,7 +86,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get filtered words
-  app.get("/api/filtered-words", async (req, res) => {
+  app.get("/api/filtered-words", requireAuth, async (req, res) => {
     try {
       const words = await storage.getFilteredWords();
       res.json(words);
@@ -94,7 +97,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Add filtered word
-  app.post("/api/filtered-words", async (req, res) => {
+  app.post("/api/filtered-words", requireAuth, async (req, res) => {
     try {
       const result = insertFilteredWordSchema.safeParse(req.body);
       
@@ -111,7 +114,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update filtered word
-  app.patch("/api/filtered-words/:id", async (req, res) => {
+  app.patch("/api/filtered-words/:id", requireAuth, async (req, res) => {
     try {
       const id = parseInt(req.params.id, 10);
       
@@ -141,7 +144,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete filtered word
-  app.delete("/api/filtered-words/:id", async (req, res) => {
+  app.delete("/api/filtered-words/:id", requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id, 10);
       
@@ -163,7 +166,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get moderation logs
-  app.get("/api/moderation-logs", async (req, res) => {
+  app.get("/api/moderation-logs", requireAuth, async (req, res) => {
     try {
       const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 100;
       const offset = req.query.offset ? parseInt(req.query.offset as string, 10) : 0;
@@ -177,7 +180,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get bot settings
-  app.get("/api/settings/:chatId", async (req, res) => {
+  app.get("/api/settings/:chatId", requireAuth, async (req, res) => {
     try {
       const { chatId } = req.params;
       
@@ -194,7 +197,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update bot settings
-  app.patch("/api/settings/:chatId", async (req, res) => {
+  app.patch("/api/settings/:chatId", requireAdmin, async (req, res) => {
     try {
       const { chatId } = req.params;
       
@@ -223,7 +226,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get bot status
-  app.get("/api/bot/status", (req, res) => {
+  app.get("/api/bot/status", requireAuth, (req, res) => {
     const bot = getBot();
     res.json({ active: bot !== null });
   });
