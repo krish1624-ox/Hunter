@@ -6,6 +6,7 @@ import { db } from './db';
 import { pool } from './db';
 import { users, loginSchema, insertUserSchema } from '@shared/schema';
 import { eq } from 'drizzle-orm';
+import './types'; // Import session type augmentation
 
 // Session configuration
 const PgStore = pgSession(session);
