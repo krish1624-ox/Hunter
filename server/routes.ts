@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { startBot, stopBot, getBot } from "./telegram-bot";
 import { z } from "zod";
 import { insertFilteredWordSchema, insertBotSettingsSchema } from "@shared/schema";
+import { setupAuth, requireAuth, requireAdmin } from "./auth";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Start the Telegram bot
